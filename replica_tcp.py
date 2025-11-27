@@ -48,37 +48,11 @@ while True:
     connfd, cliente_addr = sockfd.accept()
     print(f"[SERVIDOR] Cliente conectado: {cliente_addr}")
 
-    # Recebe as informações do arquivo
-    header = connfd.recv(TAM_MAX).decode()
-    
-    # Processa o "header" recebido
-    info = header.split("\n")
-    clientId = info[0]
-    nome = info[1]
-    tamanho = int(info[2])
-    mtime = info[3]
-    ctime = info[4]
-    
-    # Recebe o arquivo em si
-    with open(nome, "wb") as f:
-        bytes_lidos = 0
+    # Recebe dados (em bytes) do cliente e decodifica para str
+    buffer = connfd.recv(TAM_MAX).decode()
 
-        # Recebe o arquivo em partes
-        while bytes_lidos < tamanho:
-            # Recebe próximo bloco do arquivo
-            buffer = connfd.recv(TAM_MAX)
+    print(f"[SERVIDOR] Mensagem recebida: {buffer}")
 
-            # Se não há mais dados, encerra o recebimento
-            if not buffer:
-                break
-
-            # Escreve os bytes recebidos no arquivo
-            f.write(buffer)
-
-            # Atualiza a quantidade total de bytes lidos
-            bytes_lidos += len(buffer)
-
-    buffer = "Recebido com sucesso!"
     # Envia a mesma mensagem (codificada em bytes)
     connfd.send(buffer.encode())
 

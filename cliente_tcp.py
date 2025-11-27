@@ -17,6 +17,7 @@
 #
 # ***************************************************************
 
+import os
 import socket
 import sys
 
@@ -44,26 +45,42 @@ def initConnection(id, host, porta):
       sockfd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
       # Conecta ao servidor
-      skt.connect((host, porta))
+      sockfd.connect((host, porta))
 
       return sockfd
 
+# Realiza upload de arquivo para o servidor
 def upload(skt, id, host, porta, arq):
+      # Pega informações do arquivo
+      info = os.stat(arq)
+      buffer = f"{id}\n{arq}\n{info.st_size}\n{info.st_mtime}\n{info.st_ctime}\n"
+
+      # Envia o "header" textual para o servidor
+      skt.sendall(buffer.encode())
+
+      # Lê e envia bytes do arquivo
+      with open(arq, "rb") as f:
+            while True:
+                  # Lê próximo bloco do arquivo
+                  buffer = f.read(TAM_MAX)
+
+                  # Se não há mais dados, encerra o envio
+                  if not buffer:
+                        break
+                  
+                  # Envia bloco lido
+                  skt.sendall(buffer)
+
+      print("[CLIENTE] Arquivo enviado.")
+
+      # Recebe resposta do servidor
+      resposta = skt.recv(TAM_MAX).decode()
+
+      print(f"[CLIENTE] Resposta recebida: {resposta}")
      
-     # Lê mensagem do usuário
-     buffer = input("[CLIENTE] Mensagem: ")
-
-     # Envia mensagem para o servidor
-     skt.send(buffer.encode())
-
-     # Recebe resposta do servidor
-     resposta = skt.recv(TAM_MAX).decode()
-
-     print(f"[CLIENTE] Resposta recebida: {resposta}")
-     
      
 
-def list(id, host, porta):
+def list(skt,id, host, porta):
      # Conecta ao servidor
      skt.connect((host, porta))
 
