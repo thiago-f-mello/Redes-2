@@ -1,47 +1,31 @@
 #!/usr/bin/env python3
-#
-# ***************************************************************
-# 
-# Nome do arquivo: servidor_tcp.py
-#
-# Descrição: Servidor TCP simples iterativo.
-#            Recebe mensagens e envia de volta.
-#
-# Autor: Giovanni Venâncio
-# Data: 29/10/2025
-#
-# Execução:
-#     python3 servidor_tcp.py <porta>
-#
-# Exemplo:
-#     python3 servidor_tcp.py 8500
-#
-# ***************************************************************
+# Copyright (c) 2025 Rafael Urbanek Laurentino e Thiago Fabricio de Melo
+# Todos os direitos reservados.
+
 import os
 import socket
 import sys
-import json
+import config as c
 
-TAM_MAX = 1024          # Tamanho máximo do buffer de dados
-TAM_FILA = 5            # Tamanho da fila de conexões/Clientes
-DEBUG = False           # Flag para as informações de DEBUG
-TAM_REP = 3             # Quantidade de Réplicas
-DIRNAME = "Server"      # Nome do diretório do servidor
-DEFAULT_PORT = 9000     # Porta padrão para as réplicas
-ACK = "ok"              # ACK para confirmação de recebimento
+# ------------------------------------------- Funções -------------------------------------------
+
+# Cria as portas das réplicas
+def createReplicasPorts():
+    replicasPorts = [c.DEFAULT_PORT + i for i in range(1, c.TAM_REP + 1)]
+    return replicasPorts
 
 # Função para criar os sockets para se conectar com as N réplicas
-def createReplicasSockets(port):
+def createReplicasSockets():
     
-    replicasPorts = [DEFAULT_PORT + i for i in range(1, TAM_REP + 1)]
+    replicasPorts = createReplicasPorts()
     replicasSockets = []
 
     # Cria os sockets
     for port in replicasPorts:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind(("", port))
         replicasSockets.append(sock)
+    
+    return replicasSockets
 
 # Função para criar o socket para se conectar com o cliente
 def createClientSocket(port):
@@ -56,19 +40,81 @@ def createClientSocket(port):
 
 # Função para criar o diretório do cliente no servidor local
 def createClientDirectory(id):
-    clientPath = ("./" + DIRNAME + "/" + id + "/")
+    clientPath = ("./" + c.DIRNAME + "/" + id + "/")
 
     if not os.path.isdir(clientPath):
         try:
             os.mkdir(clientPath)
-            if DEBUG: print(f"Diretório '{clientPath}' criado com sucesso!")
+            if c.DEBUG: print(f"Diretório '{clientPath}' criado com sucesso!")
         except Exception as ex:
-            if DEBUG: print("Erro: ", ex)
+            if c.DEBUG: print("Erro: ", ex)
     
     return clientPath
 
+def replicateFile(clientId, arqPath):
+    # Pega o nome do arquivo, independente do caminho
+    arqName = os.path.basename(arqPath)
+    
+    # Cria os sockets para se comunicar com as N réplicas
+    sockets = createReplicasSockets()
+    ports = createReplicasPorts()
+
+    # Pega os metadados do arquivo
+    metaData = os.stat(arqPath)
+    # Constrói a header
+    header = (
+        f"{clientId}\n"                # Id do cliente
+        f"replicate\n"                 # Operação
+        f"{arqName}\n"                 # Nome do arquivo
+        f"{metaData.st_size}\n"        # Tamanho do arquivo
+        f"{metaData.st_mtime}\n"       # Última modificação do arquivo
+        f"{metaData.st_atime}\n"       # Último acesso do arquivo
+        f"{metaData.st_mode}\n"        # Permissões do arquivo
+        "\n"
+    )
+    
+    # Lê e envia os bytes do arquivo
+    with open(arqPath, "rb") as f:
+        print("Iniciando processo de replicação...")
+        # Envia sequencialmente para todas as réplicas
+        i = 1
+        for sock in sockets:
+            # Retorna para o início do arquivo
+            f.seek(0)
+
+            # Conecta com a réplica
+            sock.connect((c.HOST_REP,ports[i-1]))
+            if c.DEBUG: print(f"[SERVIDOR] RÉPLICA {i} CONECTADA")
+
+            # Envia o "header" para o servidor
+            sock.sendall(header.encode())
+            if c.DEBUG: print(f"[SERVIDOR] HEADER ENVIADA PARA A RÉPLICA {i}")
+
+            # Espera confirmação do header
+            response = sock.recv(c.TAM_MAX).decode()
+            if response == c.ACK:
+                # Envia o arquivo
+                while chunk := f.read(c.TAM_MAX):
+                    sock.sendall(chunk)
+
+                if c.DEBUG: print(f"[SERVIDOR] ARQUIVO ENVIADO PARA A RÉPLICA {i}")
+                
+                # Recebe resposta do servidor
+                response = sock.recv(c.TAM_MAX).decode()
+                if response == c.ACK:
+                    print(f"[Réplica {i}] OK")
+                else:      
+                    print(f"Erro. Resposta recebida: {response}")
+
+                # Deconecta
+                sock.close()
+                i += 1
+            else:      
+                  print(f"Erro. Resposta recebida: {response}")
+                                       
 # Função que faz o upload do arquivo e chama a função de replicação
 def uploadFile(skt, header):
+    # Pegando os dados da header
     clientId = header[0]
     arqName = header[2]
     arqSize = int(header[3])
@@ -76,17 +122,20 @@ def uploadFile(skt, header):
     arqatime = header[5]
     arqMode = header[6]
     
-    # Prepara o caminho do arquivo
+    # Cria o diretório do cliente se não existir e prepara o caminho
     arqPath = (createClientDirectory(clientId) + arqName)
     
     # Recebe o arquivo em si
     with open(arqPath, "wb") as f:
         readBytes = 0
 
+        # Enviando confirmaçao do header e liberação dos dados
+        skt.send(c.ACK.encode())
+
         # Recebe o arquivo em partes
         while readBytes < arqSize:
             # Recebe próximo bloco do arquivo
-            buffer = skt.recv(TAM_MAX)
+            buffer = skt.recv(c.TAM_MAX)
             # Se não há mais dados, encerra o recebimento
             if not buffer:
                 break
@@ -102,13 +151,16 @@ def uploadFile(skt, header):
 
     print(f"Arquivo '{arqName}' recebido. Armazenamento local concluído.")
     
+    # Inicia o processo de réplica
+    replicateFile(clientId, arqPath)
+
     # Envia a mesma mensagem de confirmação
     print("Replicação concluída com sucesso. Enviando confirmação ao cliente.")
-    skt.send(ACK.encode())
+    skt.send(c.ACK.encode())
 
     # Fecha a conexão com o cliente
     skt.close()
-    if DEBUG: print("[SERVIDOR] Conexão encerrada.\n")
+    if c.DEBUG: print("[SERVIDOR] Conexão encerrada.\n")
 
 # Função para listar os arquivos do cliente
 def listFiles(skt, id):
@@ -121,9 +173,7 @@ def listFiles(skt, id):
     
     # Fecha a conexão com o cliente
     skt.close()
-    if DEBUG: print("[SERVIDOR] Conexão encerrada.\n")
-
-
+    if c.DEBUG: print("[SERVIDOR] Conexão encerrada.\n")
 
 # -------------------------------------- Início do Main --------------------------------------
 
@@ -134,7 +184,7 @@ if len(sys.argv) < 2:
     sys.exit(1)
 # Verifica se é modo debug
 if len(sys.argv) == 3 and sys.argv[2].lower() == "debug":
-    DEBUG = True
+    c.DEBUG = True
 # Porta do servidor/Cliente, converte para int
 clientPort = int(sys.argv[1])
 # Valida a porta
@@ -143,32 +193,32 @@ if clientPort >= 9000:
     sys.exit(1)
 
 # Cria o diretório do servidor principal se não existir
-if not os.path.isdir(DIRNAME):
+if not os.path.isdir(c.DIRNAME):
     try:
-        os.mkdir(DIRNAME)
-        if DEBUG: print(f"Diretório '{DIRNAME}' criado com sucesso!")
+        os.mkdir(c.DIRNAME)
+        if c.DEBUG: print(f"[SEVIDOR] Diretório '{c.DIRNAME}' criado com sucesso!")
     except Exception as ex:
-        if DEBUG: print("Erro: ", ex) 
+        if c.DEBUG: print("[SERVIDOR] Erro: ", ex) 
 
 # Cria o socket para se comunicar com o cliente
 clientSocket = createClientSocket(clientPort)
 # Coloca o socket em modo de escuta
-clientSocket.listen(TAM_FILA)
-if DEBUG: print("[SERVIDOR] Aguardando conexões...")
+clientSocket.listen(c.TAM_FILA)
+if c.DEBUG: print("[SERVIDOR] Aguardando conexões...")
 
 # Loop principal: aceita conexões iterativamente
 while True:
     # Aceita a conexão
     auxSocket, client_addr = clientSocket.accept()
     # Recebe as informações do arquivo (IMPLEMENTAR PARA HEADERS QUE SEJAM MAIORES QUE O TAM_MAX)
-    header = (auxSocket.recv(TAM_MAX).decode()).split("\n")
+    header = (auxSocket.recv(c.TAM_MAX).decode()).split("\n")
 
     # Processa o "header" recebido
     clientId = header[0]
     operation = header[1]
 
-    print(f"[SERVIDOR] Conexão com cliente [{clientId}] estabelecida")
-    if DEBUG: print(f"Endereço: {client_addr}")
+    print(f"Conexão com cliente [{clientId}] estabelecida.")
+    if c.DEBUG: print(f"Endereço: {client_addr}")
     print(f"Operação solicitada: {operation}")
 
     match operation.lower():
