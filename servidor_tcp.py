@@ -11,7 +11,7 @@ import config as c
 
 # Cria as portas das réplicas
 def createReplicasPorts():
-    replicasPorts = [c.DEFAULT_PORT + i for i in range(1, c.TAM_REP + 1)]
+    replicasPorts = [c.DEFAULT_PORT + i for i in range(c.TAM_REP)]
     return replicasPorts
 
 # Função para criar os sockets para se conectar com as N réplicas
@@ -130,7 +130,7 @@ def uploadFile(skt, header):
         readBytes = 0
 
         # Enviando confirmaçao do header e liberação dos dados
-        skt.send(c.ACK.encode())
+        skt.sendall(c.ACK.encode())
 
         # Recebe o arquivo em partes
         while readBytes < arqSize:
@@ -156,7 +156,7 @@ def uploadFile(skt, header):
 
     # Envia a mesma mensagem de confirmação
     print("Replicação concluída com sucesso. Enviando confirmação ao cliente.")
-    skt.send(c.ACK.encode())
+    skt.sendall(c.ACK.encode())
 
     # Fecha a conexão com o cliente
     skt.close()
@@ -169,7 +169,7 @@ def listFiles(skt, id):
     arqPath = createClientDirectory(id)
     content = os.listdir(arqPath)
 
-    skt.send(str(content).encode())
+    skt.sendall(str(content).encode())
     
     # Fecha a conexão com o cliente
     skt.close()
@@ -210,7 +210,7 @@ if c.DEBUG: print("[SERVIDOR] Aguardando conexões...")
 while True:
     # Aceita a conexão
     auxSocket, client_addr = clientSocket.accept()
-    # Recebe as informações do arquivo (IMPLEMENTAR PARA HEADERS QUE SEJAM MAIORES QUE O TAM_MAX)
+    # Recebe as informações do arquivo
     header = (auxSocket.recv(c.TAM_MAX).decode()).split("\n")
 
     # Processa o "header" recebido

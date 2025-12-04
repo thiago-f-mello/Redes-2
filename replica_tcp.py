@@ -50,7 +50,7 @@ def saveFile(skt, header, dirPath):
         readBytes = 0
 
         # Enviando confirmaçao do header e liberação dos dados
-        skt.send(c.ACK.encode())
+        skt.sendall(c.ACK.encode())
 
         # Recebe o arquivo em partes
         while readBytes < arqSize:
@@ -73,7 +73,7 @@ def saveFile(skt, header, dirPath):
 
     # Envia a mesma mensagem de confirmação
     if c.DEBUG: print(f"[RÉPLICA {replicaId}] Enviando confirmação ao cliente.")
-    skt.send(c.ACK.encode())
+    skt.sendall(c.ACK.encode())
 
     # Fecha a conexão com o cliente
     skt.close()

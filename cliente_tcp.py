@@ -6,6 +6,7 @@ import os
 import socket
 import sys
 import config as c      # Configurações gerais
+import ast              # Para tratar a lista de arquivos no servidor
 
 # ------------------------------------------- Funções -------------------------------------------
 
@@ -15,15 +16,20 @@ def help():
     print ("upload - faz upload de um arquivo - uso correto: upload <arquivo>")
     print ("list - lista todos os arquivos mantidos no servidor")
     print ("exit - encerra a execução do programa")
-    print ("help - exibe modo de uso e comandos disponíveis\n")
+    print ("help - exibe modo de uso e comandos disponíveis")
 
 # Função que realiza o upload de um arquivo para o servidor
 def upload(port, id, arqPath):
       # Pega o nome do arquivo, independente do caminho
       arqName = os.path.basename(arqPath)
 
+      # Pega caminho completo caso use ~
+      if arqPath[0] == "~":
+            arqPath = os.path.expanduser(arqPath)
+
       # Retorna caso não encontre o arquivo
       if not os.path.exists(arqPath):
+            print(arqPath)
             print(f"Arquivo '{arqName}' não encontrado.")
             return
             
@@ -89,11 +95,19 @@ def list(port, id):
       )
 
       # Envia o "header" para o servidor
-      sockfd.send(header.encode())
+      sockfd.sendall(header.encode())
 
       # Recebe lista de arquivos do servidor
       content = sockfd.recv(c.TAM_MAX).decode()
-      print(f"{content}")
+      if content != "[]": 
+
+            # Converte a string "['...']" em uma lista real ['...', '...']
+            arqList = ast.literal_eval(content)
+
+            for arq in arqList:
+                  print(arq)
+      else:
+           print("Não há arquivos salvos no servidor")
       
       # Fecha socket 
       sockfd.close()
@@ -111,7 +125,7 @@ port = int(sys.argv[3])         # Porta do servidor
 
 while True:
 
-    print ("Para listar todos os comandos digite 'help'")
+    print ("\nPara listar todos os comandos digite 'help'")
     userInput = input("Digite um comando: ")
     
     if not userInput.strip():
@@ -123,13 +137,13 @@ while True:
     match op:
         case _ if op == c.OPTIONS[0]:
               if len(inputList) != 2 :
-                print ("Só é possível fazer upload de 1 arquivo por vez; Uso correto: upload <arquivo>\n")
+                print ("Só é possível fazer upload de 1 arquivo por vez; Uso correto: upload <arquivo>")
                 continue
-              print (f"Enviando arquivo '{inputList[1]}' ...\n")
+              print (f"Enviando arquivo '{inputList[1]}' ...")
               upload(port, clientId, inputList[1])
         
         case _ if op == c.OPTIONS[1]:
-              print("Listando todos arquivos do servidor\n")
+              print("Listando todos arquivos do servidor")
               list(port, clientId)
        
         case _ if op == c.OPTIONS[2]:
